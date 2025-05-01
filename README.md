@@ -1,4 +1,4 @@
-# Firebase Studio - PhotoText Extractor
+# PhotoText-Extractor
 
 This is a Next.js application built within Firebase Studio that allows users to extract text from images using AI.
 
