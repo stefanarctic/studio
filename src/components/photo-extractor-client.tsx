@@ -5,9 +5,10 @@ import Image from 'next/image';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Upload, Copy, Loader2 } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Upload, Copy, Loader2, XCircle, AlertCircle, FileText } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { extractText } from '@/ai/flows/extract-text-from-image';
 
@@ -19,31 +20,43 @@ export default function PhotoExtractorClient() {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const clearState = () => {
+    setImageBase64(null);
+    setExtractedText('');
+    setError(null);
+    setIsLoading(false);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''; // Reset file input
+    }
+  };
+
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      setError(null);
-      setExtractedText(''); // Reset extracted text when a new image is selected
+      // Clear previous state immediately on new file selection
+      clearState();
       const reader = new FileReader();
+      reader.onloadstart = () => setIsLoading(true); // Indicate loading while reading file
       reader.onloadend = () => {
         const result = reader.result as string;
-        // Validate if it's a valid image Data URI
-        if (result.startsWith('data:image/')) {
-          setImageBase64(result);
-        } else {
-          setError('Invalid file type. Please upload an image.');
-          setImageBase64(null);
-          if (fileInputRef.current) {
-            fileInputRef.current.value = ''; // Reset file input
+        setIsLoading(false); // Finished reading
+        // Basic validation for image data URI
+        if (result && result.startsWith('data:image/')) {
+           if (file.size > 10 * 1024 * 1024) { // Check file size (e.g., 10MB)
+             setError('File size exceeds 10MB limit.');
+             clearState(); // Clear state on error
+          } else {
+            setImageBase64(result);
           }
+        } else {
+          setError('Invalid file type. Please upload an image (PNG, JPG, GIF).');
+          clearState(); // Clear state on error
         }
       };
       reader.onerror = () => {
+        setIsLoading(false); // Finished reading (with error)
         setError('Failed to read the file.');
-        setImageBase64(null);
-         if (fileInputRef.current) {
-            fileInputRef.current.value = ''; // Reset file input
-          }
+        clearState(); // Clear state on error
       };
       reader.readAsDataURL(file);
     }
@@ -60,17 +73,32 @@ export default function PhotoExtractorClient() {
     setExtractedText('');
 
     try {
-      console.log('Exctracting...')
       const result = await extractText({ imageBase64 });
       setExtractedText(result.extractedText);
+      if (result.extractedText === 'No text found in the image.') {
+         toast({
+          title: "Extraction Complete",
+          description: "No text was detected in the provided image.",
+        });
+      } else {
+         toast({
+          title: "Extraction Successful",
+          description: "Text extracted from the image.",
+        });
+      }
     } catch (err) {
       console.error('Extraction failed:', err);
-      setError('Failed to extract text from the image. Please try again.');
+      setError('Failed to extract text. The service might be unavailable or the image could not be processed. Please try again.');
       setExtractedText(''); // Clear text on error
+       toast({
+          variant: "destructive",
+          title: "Extraction Failed",
+          description: "Could not extract text from the image.",
+        });
     } finally {
       setIsLoading(false);
     }
-  }, [imageBase64]);
+  }, [imageBase64, toast]);
 
   const handleCopyText = () => {
     if (!extractedText) return;
@@ -94,6 +122,7 @@ export default function PhotoExtractorClient() {
   const handleDragOver = (event: React.DragEvent<HTMLLabelElement>) => {
     event.preventDefault();
     event.stopPropagation();
+    // Optional: Add visual feedback on drag over
   };
 
   const handleDrop = (event: React.DragEvent<HTMLLabelElement>) => {
@@ -101,23 +130,15 @@ export default function PhotoExtractorClient() {
     event.stopPropagation();
     const file = event.dataTransfer.files?.[0];
     if (file) {
-       setError(null);
-       setExtractedText(''); // Reset extracted text on drop
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const result = reader.result as string;
-         if (result.startsWith('data:image/')) {
-          setImageBase64(result);
-        } else {
-          setError('Invalid file type. Please drop an image file.');
-          setImageBase64(null);
-        }
-      };
-       reader.onerror = () => {
-        setError('Failed to read the dropped file.');
-        setImageBase64(null);
-      };
-      reader.readAsDataURL(file);
+       // Simulate file change event for consistency
+       const dt = new DataTransfer();
+       dt.items.add(file);
+       if (fileInputRef.current) {
+           fileInputRef.current.files = dt.files;
+           // Trigger the change event handler
+           const changeEvent = new Event('change', { bubbles: true });
+           fileInputRef.current.dispatchEvent(changeEvent);
+       }
     }
   };
 
@@ -127,106 +148,140 @@ export default function PhotoExtractorClient() {
 
 
   return (
-    <div className="w-full max-w-2xl space-y-6">
-      <Card className="shadow-lg">
-        <CardHeader className="text-center">
-          <CardTitle className="text-3xl font-bold text-foreground">PhotoText Extractor</CardTitle>
+    <div className="w-full max-w-2xl">
+      <Card className="shadow-lg overflow-hidden">
+        <CardHeader className="text-center bg-muted/30 border-b">
+          <CardTitle className="text-2xl md:text-3xl font-bold text-foreground">PhotoText Extractor</CardTitle>
+          <CardDescription>Upload an image to extract text using AI</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent className="p-6 space-y-6">
           <div className="space-y-2">
              <Label
               htmlFor="image-upload"
-              className="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed rounded-lg cursor-pointer border-border hover:bg-muted/50 transition-colors"
+              className={`flex flex-col items-center justify-center w-full min-h-[12rem] border-2 border-dashed rounded-lg cursor-pointer border-border hover:border-primary/50 hover:bg-muted/30 transition-colors relative ${isLoading && !imageBase64 ? 'animate-pulse' : ''}`}
               onDragOver={handleDragOver}
               onDrop={handleDrop}
+              aria-busy={isLoading && !imageBase64}
+              aria-label="Image upload area: Click or drag and drop an image file here"
             >
                {imageBase64 ? (
-                 <div className="relative w-full h-full">
+                 <div className="relative w-full h-48 flex items-center justify-center p-2">
                    <Image
                     src={imageBase64}
                     alt="Uploaded preview"
-                    layout="fill"
-                    objectFit="contain"
+                    fill
+                    style={{ objectFit: 'contain' }}
                     className="rounded-md"
                     data-ai-hint="uploaded image preview"
+                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw" // Example sizes
                   />
                  </div>
                ) : (
                 <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center">
                     <Upload className="w-10 h-10 mb-3 text-muted-foreground" />
                     <p className="mb-2 text-sm text-muted-foreground">
-                      <span className="font-semibold text-primary">Click to upload</span> or drag and drop
+                      <span className="font-semibold text-primary">Click to upload</span> or drag & drop
                     </p>
-                    <p className="text-xs text-muted-foreground">PNG, JPG, GIF up to 10MB</p>
+                    <p className="text-xs text-muted-foreground">PNG, JPG, GIF (Max 10MB)</p>
                 </div>
                )}
               <Input
                 id="image-upload"
                 type="file"
-                accept="image/*"
+                accept="image/png, image/jpeg, image/gif"
                 onChange={handleFileChange}
                 className="hidden"
                 ref={fileInputRef}
+                disabled={isLoading}
+                aria-describedby={error ? "error-alert" : undefined}
               />
+               {isLoading && !imageBase64 && (
+                <div className="absolute inset-0 flex items-center justify-center bg-background/70 rounded-lg">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                   <span className="sr-only">Loading image...</span>
+                </div>
+              )}
             </Label>
-            {imageBase64 && (
-              <Button variant="outline" size="sm" onClick={triggerFileInput} className="mt-2">
-                Change Image
-              </Button>
-            )}
-          </div>
 
-          {error && (
-            <p className="text-sm text-destructive">{error}</p>
-          )}
+            {error && (
+             <Alert variant="destructive" id="error-alert" className="mt-4">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Error</AlertTitle>
+                <AlertDescription>{error}</AlertDescription>
+             </Alert>
+            )}
+
+             {(imageBase64 || error) && (
+              <div className="flex justify-between items-center mt-2">
+                {imageBase64 && (
+                  <Button variant="outline" size="sm" onClick={triggerFileInput} disabled={isLoading} className="text-xs">
+                    Change Image
+                  </Button>
+                 )}
+                 <Button variant="ghost" size="sm" onClick={clearState} disabled={isLoading} className="text-destructive hover:text-destructive text-xs">
+                    <XCircle className="mr-1 h-4 w-4" />
+                    Clear
+                 </Button>
+              </div>
+            )}
+
+          </div>
 
           <Button
             onClick={handleExtractText}
             disabled={!imageBase64 || isLoading}
             className="w-full"
-            aria-label="Extract Text from Image"
+            aria-label="Extract Text from Uploaded Image"
+            aria-live="polite"
           >
             {isLoading ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
-               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 h-4 w-4"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-
+               <FileText className="mr-2 h-4 w-4"/>
             )}
-            {isLoading ? 'Extracting...' : 'Extract Text'}
+            {isLoading ? 'Extracting Text...' : 'Extract Text'}
           </Button>
 
-          {extractedText && (
+          {(extractedText || (isLoading && imageBase64)) && (
             <div className="space-y-2">
-              <Label htmlFor="extracted-text">Extracted Text:</Label>
-              <div className="relative">
-                <Textarea
-                  id="extracted-text"
-                  value={extractedText}
-                  readOnly
-                  className="pr-10 min-h-[150px] bg-muted/30"
-                  aria-label="Extracted text display area"
-                />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleCopyText}
-                  className="absolute top-2 right-2 h-7 w-7 text-muted-foreground hover:text-foreground"
-                  aria-label="Copy extracted text"
-                >
-                  <Copy className="h-4 w-4" />
-                </Button>
+              <Label htmlFor="extracted-text" className="font-semibold">Extracted Text:</Label>
+              <div className="relative" role="region" aria-live="polite">
+                 {isLoading && imageBase64 && (
+                     <div className="flex items-center justify-center p-4 border rounded-md min-h-[150px] bg-muted/30">
+                      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                      <span className="ml-2 text-muted-foreground">Processing image...</span>
+                     </div>
+                 )}
+                 {extractedText && !isLoading && (
+                    <>
+                        <Textarea
+                          id="extracted-text"
+                          value={extractedText}
+                          readOnly
+                          className="pr-10 min-h-[150px] bg-muted/20 border rounded-md shadow-inner text-sm"
+                          aria-label="Extracted text display area"
+                          rows={6}
+                        />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={handleCopyText}
+                          className="absolute top-2 right-2 h-7 w-7 text-muted-foreground hover:text-foreground transition-colors"
+                          aria-label="Copy extracted text to clipboard"
+                          title="Copy text"
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                    </>
+                 )}
               </div>
             </div>
           )}
-           {isLoading && !extractedText && (
-             <div className="space-y-2">
-               <Label>Extracting Text:</Label>
-                 <div className="flex items-center justify-center p-4 border rounded-md min-h-[150px] bg-muted/30">
-                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                 </div>
-             </div>
-            )}
+
         </CardContent>
+         <CardFooter className="bg-muted/30 border-t p-4 text-center text-xs text-muted-foreground">
+              Powered by AI - Ensure extracted text accuracy before use.
+         </CardFooter>
       </Card>
     </div>
   );
