@@ -60,6 +60,7 @@ export default function PhotoExtractorClient() {
     setExtractedText('');
 
     try {
+      console.log('Exctracting...')
       const result = await extractText({ imageBase64 });
       setExtractedText(result.extractedText);
     } catch (err) {
