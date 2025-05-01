@@ -49,7 +49,7 @@ export default function PhotoExtractorClient() {
             setImageBase64(result);
           }
         } else {
-          setError('Invalid file type. Please upload an image (PNG, JPG, GIF).');
+          setError('Invalid file type. Please upload an image (PNG, JPG, GIF, WebP).');
           clearState(); // Clear state on error
         }
       };
@@ -70,12 +70,14 @@ export default function PhotoExtractorClient() {
 
     setIsLoading(true);
     setError(null);
-    setExtractedText('');
+    setExtractedText(''); // Clear previous text while loading
 
     try {
       const result = await extractText({ imageBase64 });
-      setExtractedText(result.extractedText);
-      if (result.extractedText === 'No text found in the image.') {
+      const text = result.extractedText.trim(); // Use trimmed text for checks
+      setExtractedText(text); // Set the potentially empty text
+
+      if (!text) { // Check if the extracted text is empty or whitespace
          toast({
           title: "Extraction Complete",
           description: "No text was detected in the provided image.",
@@ -88,12 +90,17 @@ export default function PhotoExtractorClient() {
       }
     } catch (err) {
       console.error('Extraction failed:', err);
-      setError('Failed to extract text. The service might be unavailable or the image could not be processed. Please try again.');
+      let errorMessage = 'Failed to extract text. Please try again.';
+      if (err instanceof Error) {
+          // Check for specific error messages if needed, e.g., API errors
+          // errorMessage = `Failed to extract text: ${err.message}`;
+      }
+      setError(errorMessage);
       setExtractedText(''); // Clear text on error
        toast({
           variant: "destructive",
           title: "Extraction Failed",
-          description: "Could not extract text from the image.",
+          description: "Could not extract text from the image. The AI service might be unavailable.",
         });
     } finally {
       setIsLoading(false);
@@ -182,13 +189,13 @@ export default function PhotoExtractorClient() {
                     <p className="mb-2 text-sm text-muted-foreground">
                       <span className="font-semibold text-primary">Click to upload</span> or drag & drop
                     </p>
-                    <p className="text-xs text-muted-foreground">PNG, JPG, GIF (Max 10MB)</p>
+                    <p className="text-xs text-muted-foreground">PNG, JPG, GIF, WebP (Max 10MB)</p>
                 </div>
                )}
               <Input
                 id="image-upload"
                 type="file"
-                accept="image/png, image/jpeg, image/gif"
+                accept="image/png, image/jpeg, image/gif, image/webp" // Added webp
                 onChange={handleFileChange}
                 className="hidden"
                 ref={fileInputRef}
@@ -213,15 +220,17 @@ export default function PhotoExtractorClient() {
 
              {(imageBase64 || error) && (
               <div className="flex justify-between items-center mt-2">
-                {imageBase64 && (
+                {imageBase64 && !isLoading && ( // Only show Change Image if not loading
                   <Button variant="outline" size="sm" onClick={triggerFileInput} disabled={isLoading} className="text-xs">
                     Change Image
                   </Button>
                  )}
-                 <Button variant="ghost" size="sm" onClick={clearState} disabled={isLoading} className="text-destructive hover:text-destructive text-xs">
-                    <XCircle className="mr-1 h-4 w-4" />
-                    Clear
-                 </Button>
+                 { (imageBase64 || error) && // Show clear button if there's an image or an error
+                   <Button variant="ghost" size="sm" onClick={clearState} disabled={isLoading} className="text-destructive hover:text-destructive text-xs ml-auto">
+                      <XCircle className="mr-1 h-4 w-4" />
+                      Clear
+                   </Button>
+                 }
               </div>
             )}
 
@@ -242,41 +251,53 @@ export default function PhotoExtractorClient() {
             {isLoading ? 'Extracting Text...' : 'Extract Text'}
           </Button>
 
-          {(extractedText || (isLoading && imageBase64)) && (
+          {/* Show loading indicator or extracted text */}
+          {(isLoading && imageBase64) && (
+             <div className="space-y-2">
+               <Label htmlFor="extracted-text" className="font-semibold">Extracted Text:</Label>
+               <div className="relative" role="region" aria-live="polite">
+                 <div className="flex items-center justify-center p-4 border rounded-md min-h-[150px] bg-muted/30">
+                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                   <span className="ml-2 text-muted-foreground">Processing image...</span>
+                 </div>
+               </div>
+             </div>
+           )}
+
+          {/* Show extracted text only when not loading and text exists */}
+          {!isLoading && extractedText && (
             <div className="space-y-2">
               <Label htmlFor="extracted-text" className="font-semibold">Extracted Text:</Label>
               <div className="relative" role="region" aria-live="polite">
-                 {isLoading && imageBase64 && (
-                     <div className="flex items-center justify-center p-4 border rounded-md min-h-[150px] bg-muted/30">
-                      <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                      <span className="ml-2 text-muted-foreground">Processing image...</span>
-                     </div>
-                 )}
-                 {extractedText && !isLoading && (
-                    <>
-                        <Textarea
-                          id="extracted-text"
-                          value={extractedText}
-                          readOnly
-                          className="pr-10 min-h-[150px] bg-muted/20 border rounded-md shadow-inner text-sm"
-                          aria-label="Extracted text display area"
-                          rows={6}
-                        />
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={handleCopyText}
-                          className="absolute top-2 right-2 h-7 w-7 text-muted-foreground hover:text-foreground transition-colors"
-                          aria-label="Copy extracted text to clipboard"
-                          title="Copy text"
-                        >
-                          <Copy className="h-4 w-4" />
-                        </Button>
-                    </>
-                 )}
+                  <Textarea
+                    id="extracted-text"
+                    value={extractedText}
+                    readOnly
+                    className="pr-10 min-h-[150px] bg-muted/20 border rounded-md shadow-inner text-sm"
+                    aria-label="Extracted text display area"
+                    rows={6}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleCopyText}
+                    className="absolute top-2 right-2 h-7 w-7 text-muted-foreground hover:text-foreground transition-colors"
+                    aria-label="Copy extracted text to clipboard"
+                    title="Copy text"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
               </div>
             </div>
           )}
+
+           {/* Show message if not loading and no text was found */}
+           {!isLoading && imageBase64 && !extractedText && !error && (
+            <div className="text-center text-muted-foreground p-4 border rounded-md bg-muted/30">
+              No text detected in the image.
+            </div>
+           )}
+
 
         </CardContent>
          <CardFooter className="bg-muted/30 border-t p-4 text-center text-xs text-muted-foreground">

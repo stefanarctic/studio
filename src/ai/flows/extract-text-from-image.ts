@@ -1,16 +1,16 @@
 'use server';
 
 /**
- * @fileOverview Extracts text from an image using OCR.
+ * @fileOverview Extracts text from an image using OCR via an AI model.
  *
- * - extractTextFromImageFlow - A function that handles the text extraction process.
- * - ExtractTextFromImageInput - The input type for the extractTextFromImageFlow function.
- * - ExtractTextFromImageOutput - The return type for the extractTextFromImageFlow function.
+ * - extractText - A function that handles the text extraction process by invoking the AI flow.
+ * - ExtractTextFromImageInput - The input type for the extractText function.
+ * - ExtractTextFromImageOutput - The return type for the extractText function.
  */
 
 import {ai} from '@/ai/ai-instance';
 import {z} from 'genkit';
-import {extractTextFromImage} from '@/services/ocr';
+// Removed import of mock service: import {extractTextFromImage} from '@/services/ocr';
 
 const ExtractTextFromImageInputSchema = z.object({
   imageBase64: z
@@ -22,10 +22,17 @@ const ExtractTextFromImageInputSchema = z.object({
 export type ExtractTextFromImageInput = z.infer<typeof ExtractTextFromImageInputSchema>;
 
 const ExtractTextFromImageOutputSchema = z.object({
-  extractedText: z.string().describe('The extracted text from the image.'),
+  extractedText: z
+    .string()
+    .describe('The extracted text from the image. Returns an empty string if no text is found.'),
 });
 export type ExtractTextFromImageOutput = z.infer<typeof ExtractTextFromImageOutputSchema>;
 
+/**
+ * Public function to call the text extraction flow.
+ * @param input The input containing the image data URI.
+ * @returns A promise resolving to the extracted text.
+ */
 export async function extractText(input: ExtractTextFromImageInput): Promise<ExtractTextFromImageOutput> {
   return extractTextFromImageFlow(input);
 }
@@ -33,20 +40,13 @@ export async function extractText(input: ExtractTextFromImageInput): Promise<Ext
 const extractTextFromImagePrompt = ai.definePrompt({
   name: 'extractTextFromImagePrompt',
   input: {
-    schema: z.object({
-      imageBase64: z
-        .string()
-        .describe(
-          'The image to extract text from, as a data URI that must include a MIME type and use Base64 encoding. Expected format: \'data:<mimetype>;base64,<encoded_data>\'.'
-        ),
-    }),
+    schema: ExtractTextFromImageInputSchema,
   },
   output: {
-    schema: z.object({
-      extractedText: z.string().describe('The extracted text from the image.'),
-    }),
+    schema: ExtractTextFromImageOutputSchema,
   },
-  prompt: `Extract the text from the following image: {{media url=imageBase64}}`,
+  prompt: `Extract the text content accurately from the following image. If no text is present, return an empty string for the extractedText field.
+Image: {{media url=imageBase64}}`,
 });
 
 const extractTextFromImageFlow = ai.defineFlow<
@@ -59,7 +59,11 @@ const extractTextFromImageFlow = ai.defineFlow<
     outputSchema: ExtractTextFromImageOutputSchema,
   },
   async input => {
-    const ocrResult = await extractTextFromImage(input.imageBase64);
-    return {extractedText: ocrResult.text};
+    // Call the AI prompt directly instead of the mock service
+    const {output} = await extractTextFromImagePrompt(input);
+
+    // Ensure output is not null or undefined before returning
+    // If the model somehow returns null/undefined, default to an empty string
+    return {extractedText: output?.extractedText ?? ''};
   }
 );
